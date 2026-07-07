@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>مشاركة على واتساب</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: #0b141a;
+    color: #e9edef;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 { color: #25D366; font-size: 20px; margin-bottom: 20px; text-align:center; }
+  .box {
+    background: #202c33;
+    border-radius: 14px;
+    padding: 20px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+  }
+  .tabs { display:flex; gap:8px; margin-bottom:15px; }
+  .tab {
+    flex:1; padding:10px; border-radius:8px; cursor:pointer;
+    background:#2a3942; color:#aebac1; font-size:14px;
+  }
+  .tab.active { background:#25D366; color:#111; font-weight:bold; }
+  .panel { display:none; }
+  .panel.active { display:block; }
+  input[type=file] { display: none; }
+  label {
+    display: block;
+    background: #2a3942;
+    border: 2px dashed #3b4a54;
+    border-radius: 12px;
+    padding: 30px 10px;
+    cursor: pointer;
+    margin-bottom: 15px;
+  }
+  #preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    margin: 15px 0;
+  }
+  #preview img, #preview video {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+  }
+  button {
+    width: 100%;
+    padding: 14px;
+    background: #25D366;
+    color: #111;
+    font-weight: bold;
+    font-size: 16px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 10px;
+  }
+  button:disabled { background: #3b4a54; color: #888; cursor: not-allowed; }
+  #status { margin-top: 12px; font-size: 14px; color: #aebac1; line-height:1.6; }
+  .fileItem {
+    display:flex; align-items:center; justify-content:space-between;
+    background:#2a3942; padding:8px 10px; border-radius:8px; margin-bottom:6px;
+    font-size:13px;
+  }
+  .fileItem a { color:#25D366; text-decoration:none; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<h1>📤 مشاركة صور وفيديوهات على واتساب</h1>
+
+<div class="box">
+
+  <div class="tabs">
+    <div class="tab active" data-tab="direct">اختيار ملفات مباشر</div>
+    <div class="tab" data-tab="zip">رفع ملف ZIP</div>
+  </div>
+
+  <div class="panel active" id="panel-direct">
+    <label for="fileInput">اضغط هنا لاختيار الصور أو الفيديوهات (webm)</label>
+    <input type="file" id="fileInput" multiple accept="image/*,video/webm">
+  </div>
+
+  <div class="panel" id="panel-zip">
+    <label for="zipInput">اضغط هنا لاختيار ملف ZIP يحتوي الصور والفيديوهات</label>
+    <input type="file" id="zipInput" accept=".zip">
+  </div>
+
+  <div id="preview"></div>
+  <div id="fileList"></div>
+
+  <button id="shareBtn" disabled>مشاركة على واتساب</button>
+  <div id="status"></div>
+</div>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const zipInput = document.getElementById('zipInput');
+  const preview = document.getElementById('preview');
+  const fileList = document.getElementById('fileList');
+  const shareBtn = document.getElementById('shareBtn');
+  const status = document.getElementById('status');
+  const tabs = document.querySelectorAll('.tab');
+  let selectedFiles = [];
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+      selectedFiles = [];
+      preview.innerHTML = '';
+      fileList.innerHTML = '';
+      shareBtn.disabled = true;
+      status.textContent = '';
+    });
+  });
+
+  function renderPreview() {
+    preview.innerHTML = '';
+    selectedFiles.forEach(file => {
+      const url = URL.createObjectURL(file);
+      let el;
+      if (file.type.startsWith('image/')) {
+        el = document.createElement('img');
+        el.src = url;
+      } else {
+        el = document.createElement('video');
+        el.src = url;
+        el.muted = true;
+      }
+      preview.appendChild(el);
+    });
+    shareBtn.disabled = selectedFiles.length === 0;
+    status.textContent = selectedFiles.length ? `تم تجهيز ${selectedFiles.length} ملف` : '';
+  }
+
+  fileInput.addEventListener('change', () => {
+    selectedFiles = Array.from(fileInput.files);
+    fileList.innerHTML = '';
+    renderPreview();
+  });
+
+  zipInput.addEventListener('change', async () => {
+    const zf = zipInput.files[0];
+    if (!zf) return;
+    status.textContent = '⏳ جاري فك ضغط الملف...';
+    preview.innerHTML = '';
+    fileList.innerHTML = '';
+    selectedFiles = [];
+    try {
+      const zip = await JSZip.loadAsync(zf);
+      const entries = Object.values(zip.files).filter(e => !e.dir);
+      for (const entry of entries) {
+        const name = entry.name.split('/').pop();
+        const lower = name.toLowerCase();
+        let mime = null;
+        if (/\.(jpe?g|png|gif|webp|bmp)$/.test(lower)) mime = 'image/' + lower.split('.').pop().replace('jpg','jpeg');
+        else if (/\.webm$/.test(lower)) mime = 'video/webm';
+        if (!mime) continue;
+        const blob = await entry.async('blob');
+        const file = new File([blob], name, { type: mime });
+        selectedFiles.push(file);
+      }
+      if (selectedFiles.length === 0) {
+        status.textContent = '⚠️ لم يتم العثور على صور أو ملفات webm داخل الـ ZIP';
+      } else {
+        renderPreview();
+      }
+    } catch (err) {
+      status.textContent = '❌ خطأ في فك ضغط الملف: ' + err.message;
+    }
+  });
+
+  shareBtn.addEventListener('click', async () => {
+    if (!selectedFiles.length) return;
+
+    if (navigator.canShare && navigator.canShare({ files: selectedFiles })) {
+      try {
+        await navigator.share({ files: selectedFiles, title: 'مشاركة ملفات' });
+        status.textContent = '✅ تم فتح نافذة المشاركة';
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        // fall through to manual fallback below
+      }
+    }
+
+    fileList.innerHTML = '<div style="margin-top:10px;font-size:13px;color:#aebac1;">مشاركة الملفات مباشرة غير مدعومة هنا. حمّل الملفات يدويًا ثم أرسلها على واتساب:</div>';
+    selectedFiles.forEach(file => {
+      const url = URL.createObjectURL(file);
+      const row = document.createElement('div');
+      row.className = 'fileItem';
+      row.innerHTML = `<span>${file.name}</span><a href="${url}" download="${file.name}">تحميل</a>`;
+      fileList.appendChild(row);
+    });
+    status.textContent = '⚠️ جرّب فتح الصفحة من هاتفك عبر Chrome أو Safari لمشاركة الملفات مباشرة على واتساب.';
+  });
+</script>
+
+</body>
+</html>
